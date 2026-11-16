@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Pre-push hook (D13).
+#   1. Deterministic checks: ruff lint, ruff format, pytest. They BLOCK the push on failure.
+#   2. Claude review of the pushed diff, following .claude/review-rules.md. ADVISORY: never blocks.
+#
+# Activate once per clone:   git config core.hooksPath .githooks
+# Skip only the review:      SKIP_REVIEW=1 git push
+
+set -u
+
+# git passes one line per pushed ref on stdin: <local ref> <local sha> <remote ref> <remote sha>
+# Read it first, before any other command can consume stdin.
+refs=$(cat)
+
+ZERO=0000000000000000000000000000000000000000
+EMPTY_TREE=$(git hash-object -t tree /dev/null)
+
+# ---------- 1. Deterministic checks (blocking) ----------
+echo "== pre-push: deterministic checks =="
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "[FAIL] uv not found in PATH."
+  exit 1
+fi
+
+uv run ruff check . || { echo "[FAIL] ruff check. Try: uv run ruff check . --fix"; exit 1; }
+uv run ruff format --check . || { echo "[FAIL] ruff format. Run: uv run ruff format ."; exit 1; }
+
+uv run pytest -q
+status=$?
+# Exit code 5 = no tests collected (fine while the project has no tests yet)
+if [ "$status" -ne 0 ] && [ "$status" -ne 5 ]; then
+  echo "[FAIL] pytest."
+  exit 1
+fi
+echo "[OK] deterministic checks passed"
+
+# ---------- 2. Claude review (advisory) ----------
+if [ "${SKIP_REVIEW:-0}" = "1" ]; then
+  echo "Claude review skipped (SKIP_REVIEW=1)."
+  exit 0
+fi
+if ! command -v claude >/dev/null 2>&1; then
+  echo "claude CLI not found: review skipped."
+  exit 0
+fi
+
+diff_file=$(mktemp)
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue  # branch deletion: nothing to review
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New remote branch: review from the first commit that is not on any remote yet
+    first=$(git rev-list --reverse "$local_sha" --not --remotes | head -n 1)
+    [ -z "$first" ] && continue
+    base=$(git rev-parse -q --verify "$first^" || echo "$EMPTY_TREE")
+  else
+    base=$remote_sha
+  fi
+  git diff "$base" "$local_sha" -- . ':(exclude)uv.lock' >> "$diff_file"
+done <<< "$refs"
+
+if [ ! -s "$diff_file" ]; then
+  echo "No diff to review."
+  rm -f "$diff_file"
+  exit 0
+fi
+
+mkdir -p .reviews
+report=".reviews/$(date +%Y-%m-%d_%H%M%S)_$(git rev-parse --short HEAD).md"
+prompt="You are reviewing a git diff (on stdin) that is about to be pushed. \
+Follow the rules in .claude/review-rules.md strictly, including its output format and its list of known false positives. \
+You may read repo files for context. Do not modify any file. Answer in Spanish."
+
+echo "== pre-push: Claude review (advisory, does not block) =="
+claude -p "$prompt" --allowedTools Read Grep Glob < "$diff_file" | tee "$report"
+echo
+echo "Review saved to $report"
+
+rm -f "$diff_file"
+exit 0
