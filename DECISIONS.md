@@ -153,11 +153,19 @@ Las herramientas tienen argumentos estrechos y tipados (enums de etiquetas, rang
 
 **Descartado:** una skill que Claude active por su cuenta. Cerrar el día lo decide Jofre.
 
+## D15 — Repo público `jofregeli/conversational-music-recommender` (2026-11-16)
+
+**Decisión:** repo público en la cuenta personal `jofregeli`, con ese nombre. En este repo, los commits firman como `jofregeli` (configuración local, no global) y el remoto lleva el usuario en la URL. En este repo, git se autentica con `gh auth git-credential`, que tiene las dos cuentas (`jofregeli` y la del trabajo) y elige la de la URL.
+
+**Por qué:** en inglés, como el código. Describe exactamente qué es (incluido el agente), se encuentra bien en buscadores y lo entiende un reclutador de fuera. Las demás herramientas del porfolio pueden seguir el mismo patrón. El paquete de Python sigue llamándose `recomendador`.
+
+**Descartado:** `recomendador-musical`, menos visible fuera de España y con idioma distinto al del código. Un nombre propio inventado no dice qué es el proyecto.
+
 ---
 
 ## Pendiente de decidir
 
-- Nombre del repo.
+- Cuándo añadir GitHub Actions (CI): ya hay remoto (D13 lo dejaba para entonces).
 - Cómo resumir una pista larga en un vector: fragmento central o media de ventanas (Hito 2, con un experimento).
 - Qué modelo indexa el catálogo final (Hito 2, según los resultados en SDD).
 - Qué embedding y qué arquitectura (sonda o MLP) usa el clasificador final (Hito 3).
